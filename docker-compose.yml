@@ -1,0 +1,76 @@
+﻿services:
+  # ─── Base de données ────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: filepilot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: filepilot
+      POSTGRES_PASSWORD: filepilot
+      POSTGRES_DB: filepilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - filepilot_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filepilot -d filepilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── Cache / Queue (pour les futures features) ──────────────
+  redis:
+    image: redis:7-alpine
+    container_name: filepilot_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── API NestJS ─────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: filepilot_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://filepilot:filepilot@postgres:5432/filepilot
+      REDIS_URL: redis://redis:6379
+      PORT: 3001
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "3001:3001"
+    volumes:
+      - filepilot_uploads:/app/uploads
+      - filepilot_exports:/app/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Web Next.js ────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+    container_name: filepilot_web
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  filepilot_pg:
+  filepilot_uploads:
+  filepilot_exports:
