@@ -1,12 +1,19 @@
 {
-  "name": "my-turborepo",
+  "name": "filepilot",
   "private": true,
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev",
-    "lint": "turbo run lint",
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+
+    "db:migrate": "pnpm --filter @filepilot/db db:migrate",
+    "db:studio": "pnpm --filter @filepilot/db db:studio",
+    "db:seed": "pnpm --filter @filepilot/db db:seed"
   },
   "devDependencies": {
     "prettier": "^3.7.4",

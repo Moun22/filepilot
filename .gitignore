@@ -24,15 +24,37 @@ coverage
 # Build Outputs
 .next/
 out/
-build
-dist
+build/
+dist/
 
+# Node
+node_modules/
 
 # Debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
 # Misc
 .DS_Store
 *.pem
+*.log
+
+# Uploads & Exports (runtime, non versionnés)
+apps/api/uploads/
+apps/api/exports/
+
+# OS
+Thumbs.db
+
+# IDE - JetBrains
+.idea/
+
+# AI assistant local files
+.claude/
+
+# Checkpoint / local dev documents
+checkpoint-*.json
+checkpoint-*.html
+
