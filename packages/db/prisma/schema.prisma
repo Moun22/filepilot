@@ -1,0 +1,119 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  dossiers  Dossier[]
+  documents Document[]
+  exports   Export[]
+}
+
+model Organization {
+  id   String @id @default(uuid())
+  name String
+  slug String @unique
+
+  procedureTypes ProcedureType[]
+}
+
+model ProcedureType {
+  id             String @id @default(uuid())
+  organizationId String
+  name           String
+  slug           String @unique
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  templates    ProcedureTemplate[]
+  dossiers     Dossier[]
+}
+
+model ProcedureTemplate {
+  id              String   @id @default(uuid())
+  procedureTypeId String
+  version         Int
+  title           String
+  rulesJson       Json
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  procedureType ProcedureType @relation(fields: [procedureTypeId], references: [id])
+
+  @@unique([procedureTypeId, version])
+}
+
+model Dossier {
+  id              String   @id @default(uuid())
+  ownerUserId     String
+  procedureTypeId String
+  templateVersion Int
+  status          String   @default("draft") // draft/submitted/etc
+  title           String? // optionnel
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  owner         User          @relation(fields: [ownerUserId], references: [id])
+  procedureType ProcedureType @relation(fields: [procedureTypeId], references: [id])
+
+  checklistItems DossierChecklistItem[]
+  documents      Document[]
+  exports        Export[]
+}
+
+model DossierChecklistItem {
+  id        String   @id @default(uuid())
+  dossierId String
+  key       String // stable key from template, ex: "id_card"
+  label     String
+  required  Boolean  @default(true)
+  status    String   @default("todo") // todo/ok/na
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dossier Dossier @relation(fields: [dossierId], references: [id])
+
+  @@unique([dossierId, key])
+}
+
+model Document {
+  id          String @id @default(uuid())
+  dossierId   String
+  ownerUserId String
+
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  storagePath String // MVP: chemin disque (plus tard key S3)
+  createdAt   DateTime @default(now())
+
+  dossier Dossier @relation(fields: [dossierId], references: [id])
+  owner   User    @relation(fields: [ownerUserId], references: [id])
+}
+
+model Export {
+  id          String @id @default(uuid())
+  dossierId   String
+  ownerUserId String
+
+  type        String // zip (mvp)
+  storagePath String
+  createdAt   DateTime @default(now())
+
+  dossier Dossier @relation(fields: [dossierId], references: [id])
+  owner   User    @relation(fields: [ownerUserId], references: [id])
+}
