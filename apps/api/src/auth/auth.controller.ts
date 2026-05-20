@@ -1,6 +1,7 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Public } from './auth.guard';
 
 class RegisterDto {
   email!: string;
@@ -17,12 +18,14 @@ class LoginDto {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Public()
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
   register(@Body() body: RegisterDto) {
     return this.authService.register(body.email, body.password);
   }
 
+  @Public()
   @Post('login')
   @ApiOperation({ summary: 'Login' })
   login(@Body() body: LoginDto) {

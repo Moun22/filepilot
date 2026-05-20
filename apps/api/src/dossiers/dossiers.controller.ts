@@ -3,23 +3,25 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
-  Query,
+  ForbiddenException,
 } from '@nestjs/common';
 import { DossiersService } from './dossiers.service';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { CurrentUser, AuthUser } from '../auth/auth.guard';
 
 class CreateDossierDto {
-  ownerUserId!: string;
   procedureTypeId!: string;
   title?: string;
 }
 
 class UpdateChecklistDto {
-  status!: string; // todo | ok | na
+  status!: string;
 }
 
+@ApiBearerAuth()
 @ApiTags('dossiers')
 @Controller('dossiers')
 export class DossiersController {
@@ -29,24 +31,24 @@ export class DossiersController {
   @ApiOperation({
     summary: 'Create a new dossier (generates checklist from template)',
   })
-  create(@Body() body: CreateDossierDto) {
+  create(@Body() body: CreateDossierDto, @CurrentUser() user: AuthUser) {
     return this.dossiersService.createDossier({
-      ownerUserId: body.ownerUserId,
+      ownerUserId: user.id,
       procedureTypeId: body.procedureTypeId,
       title: body.title,
     });
   }
 
   @Get()
-  @ApiOperation({ summary: 'List dossiers for a user' })
-  findAll(@Query('userId') userId: string) {
-    return this.dossiersService.findAllByUser(userId);
+  @ApiOperation({ summary: "List current user's dossiers" })
+  findAll(@CurrentUser() user: AuthUser) {
+    return this.dossiersService.findAllByUser(user.id);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get dossier details with checklist' })
-  findOne(@Param('id') id: string) {
-    return this.dossiersService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.dossiersService.findOne(id, user);
   }
 
   @Patch(':id/checklist/:key')
@@ -55,7 +57,15 @@ export class DossiersController {
     @Param('id') id: string,
     @Param('key') key: string,
     @Body() body: UpdateChecklistDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.dossiersService.updateChecklistItem(id, key, body.status);
+    return this.dossiersService.updateChecklistItem(id, key, body.status, user);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a dossier and all its content' })
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    if (!id) throw new ForbiddenException();
+    return this.dossiersService.deleteDossier(id, user);
   }
 }

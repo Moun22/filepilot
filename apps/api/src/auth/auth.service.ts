@@ -26,7 +26,12 @@ export class AuthService {
       data: { email, passwordHash },
     });
 
-    return { id: user.id, email: user.email, createdAt: user.createdAt };
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+    };
   }
 
   async login(email: string, password: string) {
@@ -44,7 +49,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // MVP: return user info (JWT can be added later)
-    return { id: user.id, email: user.email, createdAt: user.createdAt };
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+    };
   }
 }

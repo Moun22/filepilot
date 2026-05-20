@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ExportsService } from './exports.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { writeFileSync, mkdtempSync, rmSync, readFileSync, statSync } from 'fs';
@@ -11,6 +15,10 @@ type PrismaMock = {
   dossier: { findUnique: jest.Mock };
   export: { create: jest.Mock; findMany: jest.Mock };
 };
+
+const owner = { id: 'u1', role: 'user' };
+const stranger = { id: 'u2', role: 'user' };
+const admin = { id: 'admin1', role: 'admin' };
 
 function drain(stream: Readable): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -47,14 +55,28 @@ describe('ExportsService', () => {
 
   it('throws when dossier missing', async () => {
     prisma.dossier.findUnique.mockResolvedValue(null);
-    await expect(service.generateZip('d1', 'u1')).rejects.toThrow(
+    await expect(service.generateZip('d1', owner)).rejects.toThrow(
       NotFoundException,
+    );
+  });
+
+  it('rejects when caller is not the dossier owner', async () => {
+    prisma.dossier.findUnique.mockResolvedValue({
+      id: 'd1',
+      ownerUserId: owner.id,
+      documents: [{ filename: 'a.pdf', storagePath: join(tmpDir, 'nope') }],
+      checklistItems: [],
+      procedureType: { slug: 'x', name: 'X', organization: { name: 'O' } },
+    });
+    await expect(service.generateZip('d1', stranger)).rejects.toThrow(
+      ForbiddenException,
     );
   });
 
   it('throws when dossier has no documents', async () => {
     prisma.dossier.findUnique.mockResolvedValue({
       id: 'd1',
+      ownerUserId: owner.id,
       documents: [],
       checklistItems: [],
       procedureType: {
@@ -64,7 +86,7 @@ describe('ExportsService', () => {
       },
       title: null,
     });
-    await expect(service.generateZip('d1', 'u1')).rejects.toThrow(
+    await expect(service.generateZip('d1', owner)).rejects.toThrow(
       BadRequestException,
     );
   });
@@ -75,6 +97,7 @@ describe('ExportsService', () => {
 
     prisma.dossier.findUnique.mockResolvedValue({
       id: 'd1',
+      ownerUserId: owner.id,
       title: 'Mon dossier',
       documents: [
         {
@@ -95,13 +118,13 @@ describe('ExportsService', () => {
     });
     prisma.export.create.mockResolvedValue({ id: 'ex1' });
 
-    const { stream, filename } = await service.generateZip('d1', 'u1');
+    const { stream, filename } = await service.generateZip('d1', owner);
 
     expect(filename).toMatch(/filepilot-caf-apl-\d+\.zip/);
     expect(prisma.export.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         dossierId: 'd1',
-        ownerUserId: 'u1',
+        ownerUserId: owner.id,
         type: 'zip',
       }),
     });
@@ -117,12 +140,35 @@ describe('ExportsService', () => {
     rmSync(storedPath, { force: true });
   });
 
+  it('admin can export any dossier', async () => {
+    const docPath = join(tmpDir, 'cv.pdf');
+    writeFileSync(docPath, 'pdf');
+
+    prisma.dossier.findUnique.mockResolvedValue({
+      id: 'd1',
+      ownerUserId: owner.id,
+      title: null,
+      documents: [{ filename: 'cv.pdf', storagePath: docPath }],
+      checklistItems: [],
+      procedureType: { slug: 's', name: 'N', organization: { name: 'O' } },
+    });
+    prisma.export.create.mockResolvedValue({ id: 'ex1' });
+
+    const { stream } = await service.generateZip('d1', admin);
+    const buf = await drain(stream);
+    expect(buf.length).toBeGreaterThan(0);
+    const storedPath: string =
+      prisma.export.create.mock.calls[0][0].data.storagePath;
+    rmSync(storedPath, { force: true });
+  });
+
   it('skips documents whose physical file is missing without failing', async () => {
     const docPath = join(tmpDir, 'present.pdf');
     writeFileSync(docPath, 'hi');
 
     prisma.dossier.findUnique.mockResolvedValue({
       id: 'd1',
+      ownerUserId: owner.id,
       title: null,
       documents: [
         { id: 'd1', filename: 'present.pdf', storagePath: docPath },
@@ -141,7 +187,7 @@ describe('ExportsService', () => {
     });
     prisma.export.create.mockResolvedValue({ id: 'ex1' });
 
-    const { stream } = await service.generateZip('d1', 'u1');
+    const { stream } = await service.generateZip('d1', owner);
     const buf = await drain(stream);
     expect(buf.length).toBeGreaterThan(0);
 
@@ -152,9 +198,13 @@ describe('ExportsService', () => {
   });
 
   it('listByDossier returns prisma rows ordered by createdAt desc', async () => {
+    prisma.dossier.findUnique.mockResolvedValue({
+      id: 'd1',
+      ownerUserId: owner.id,
+    });
     const rows = [{ id: 'ex2' }, { id: 'ex1' }];
     prisma.export.findMany.mockResolvedValue(rows);
-    const result = await service.listByDossier('d1');
+    const result = await service.listByDossier('d1', owner);
     expect(prisma.export.findMany).toHaveBeenCalledWith({
       where: { dossierId: 'd1' },
       orderBy: { createdAt: 'desc' },

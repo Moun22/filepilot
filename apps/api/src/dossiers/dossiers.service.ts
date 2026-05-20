@@ -1,15 +1,32 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { existsSync, unlinkSync } from 'fs';
 
 type ChecklistItem = { key: string; label: string; required: boolean };
 
 @Injectable()
 export class DossiersService {
   constructor(private prisma: PrismaService) {}
+
+  private async assertAccess(
+    dossierId: string,
+    user: { id: string; role: string },
+  ) {
+    const dossier = await this.prisma.dossier.findUnique({
+      where: { id: dossierId },
+      select: { id: true, ownerUserId: true },
+    });
+    if (!dossier) throw new NotFoundException('Dossier not found');
+    if (user.role !== 'admin' && dossier.ownerUserId !== user.id) {
+      throw new ForbiddenException('Not the dossier owner');
+    }
+    return dossier;
+  }
 
   async createDossier(params: {
     ownerUserId: string;
@@ -75,7 +92,7 @@ export class DossiersService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: { id: string; role: string }) {
     const dossier = await this.prisma.dossier.findUnique({
       where: { id },
       include: {
@@ -85,16 +102,26 @@ export class DossiersService {
     });
 
     if (!dossier) throw new NotFoundException('Dossier not found');
+    if (user.role !== 'admin' && dossier.ownerUserId !== user.id) {
+      throw new ForbiddenException('Not the dossier owner');
+    }
     return dossier;
   }
 
-  async updateChecklistItem(dossierId: string, key: string, status: string) {
+  async updateChecklistItem(
+    dossierId: string,
+    key: string,
+    status: string,
+    user: { id: string; role: string },
+  ) {
     const validStatuses = ['todo', 'ok', 'na'];
     if (!validStatuses.includes(status)) {
       throw new BadRequestException(
         `Status must be one of: ${validStatuses.join(', ')}`,
       );
     }
+
+    await this.assertAccess(dossierId, user);
 
     const item = await this.prisma.dossierChecklistItem.findUnique({
       where: { dossierId_key: { dossierId, key } },
@@ -106,5 +133,32 @@ export class DossiersService {
       where: { dossierId_key: { dossierId, key } },
       data: { status },
     });
+  }
+
+  async deleteDossier(dossierId: string, user: { id: string; role: string }) {
+    await this.assertAccess(dossierId, user);
+
+    const [documents, exports] = await Promise.all([
+      this.prisma.document.findMany({
+        where: { dossierId },
+        select: { storagePath: true },
+      }),
+      this.prisma.export.findMany({
+        where: { dossierId },
+        select: { storagePath: true },
+      }),
+    ]);
+
+    await this.prisma.dossier.delete({ where: { id: dossierId } });
+
+    for (const f of [...documents, ...exports]) {
+      try {
+        if (existsSync(f.storagePath)) unlinkSync(f.storagePath);
+      } catch {
+        // best-effort cleanup; row is gone, file leftover is non-fatal
+      }
+    }
+
+    return { id: dossierId, deleted: true };
   }
 }

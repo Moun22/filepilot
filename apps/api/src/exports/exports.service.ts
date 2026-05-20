@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -16,7 +17,7 @@ if (!existsSync(EXPORTS_DIR)) mkdirSync(EXPORTS_DIR, { recursive: true });
 export class ExportsService {
   constructor(private prisma: PrismaService) {}
 
-  async generateZip(dossierId: string, ownerUserId: string) {
+  async generateZip(dossierId: string, user: { id: string; role: string }) {
     const dossier = await this.prisma.dossier.findUnique({
       where: { id: dossierId },
       include: {
@@ -27,6 +28,9 @@ export class ExportsService {
     });
 
     if (!dossier) throw new NotFoundException('Dossier not found');
+    if (user.role !== 'admin' && dossier.ownerUserId !== user.id) {
+      throw new ForbiddenException('Not the dossier owner');
+    }
     if (dossier.documents.length === 0)
       throw new BadRequestException('No files to export');
 
@@ -68,15 +72,27 @@ export class ExportsService {
       void archive.finalize();
     });
 
-    // Save export record
     await this.prisma.export.create({
-      data: { dossierId, ownerUserId, type: 'zip', storagePath: outputPath },
+      data: {
+        dossierId,
+        ownerUserId: dossier.ownerUserId,
+        type: 'zip',
+        storagePath: outputPath,
+      },
     });
 
     return { stream: createReadStream(outputPath) as Readable, filename };
   }
 
-  async listByDossier(dossierId: string) {
+  async listByDossier(dossierId: string, user: { id: string; role: string }) {
+    const dossier = await this.prisma.dossier.findUnique({
+      where: { id: dossierId },
+      select: { id: true, ownerUserId: true },
+    });
+    if (!dossier) throw new NotFoundException('Dossier not found');
+    if (user.role !== 'admin' && dossier.ownerUserId !== user.id) {
+      throw new ForbiddenException('Not the dossier owner');
+    }
     return this.prisma.export.findMany({
       where: { dossierId },
       orderBy: { createdAt: 'desc' },

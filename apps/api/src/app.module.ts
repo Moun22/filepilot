@@ -8,6 +8,7 @@ import { ProcedureTypesModule } from './procedure-types/procedure-types.module';
 import { DossiersModule } from './dossiers/dossiers.module';
 import { FilesModule } from './files/files.module';
 import { ExportsModule } from './exports/exports.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ExportsModule } from './exports/exports.module';
     DossiersModule,
     FilesModule,
     ExportsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],
