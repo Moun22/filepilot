@@ -13,8 +13,11 @@
 - [Structure du monorepo](#structure-du-monorepo)
 - [Démarrage rapide](#démarrage-rapide)
 - [Variables d'environnement](#variables-denvironnement)
+- [Rôles & administration](#rôles--administration)
 - [API Reference](#api-reference)
 - [Design System](#design-system)
+- [Documentation & ADR](#documentation--adr)
+- [Dette consciente](#dette-consciente)
 - [Contribuer](#contribuer)
 
 ---
@@ -48,11 +51,14 @@ Filepilot centralise tous les documents administratifs d'un usager et l'aide à 
 Le projet est en **v0.1** avec toutes les fonctionnalités MVP implémentées :
 
 - **Auth** : inscription / connexion par email+mot de passe (bcrypt)
+- **Rôles** : `user` / `admin` — un compte admin est créé au seed
 - **Démarches** : choix de démarche → génération automatique d'une checklist depuis le template actif en DB
 - **Upload** : upload de fichiers (multipart, max 20 Mo, stockage disque local)
 - **Checklist** : toggle todo → ok → na par item, avec indicateur visuel
 - **Score** : pourcentage de complétude calculé en temps réel
 - **Export ZIP** : génération d'une archive avec tous les fichiers + checklist.txt
+- **Suppression** : un dossier peut être supprimé (cascade : checklist + documents + exports + fichiers disque)
+- **Administration** : panneau `/admin` avec stats globales, gestion des rôles, suppression d'utilisateur ou de dossier
 - **UI** : sidebar fixe, design system Indigo/Emerald (Flat design), SVG icons
 
 ---
@@ -286,6 +292,34 @@ docker/README.md          ← réservé pour configs auxiliaires futures
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | URL de l'API | `http://localhost:3001` |
 
+### Compte admin (seed)
+
+Si non surchargé :
+
+| Variable | Défaut |
+|---|---|
+| `ADMIN_EMAIL` | `admin@filepilot.local` |
+| `ADMIN_PASSWORD` | `admin123` |
+
+Définir ces variables avant `pnpm db:seed` (ou dans `docker-compose.yml` côté API) pour personnaliser le compte d'amorçage.
+
+---
+
+## Rôles & administration
+
+| Rôle    | Peut faire                                                                 |
+|---------|----------------------------------------------------------------------------|
+| `user`  | Créer / lister / consulter / supprimer **ses** dossiers, uploader des pièces, exporter en ZIP |
+| `admin` | Tout ce qu'un user peut faire **+** voir tous les dossiers, gérer les rôles, supprimer un utilisateur ou n'importe quel dossier |
+
+L'authentification du MVP repose sur le header `x-user-id` (cf.
+[ADR-0004](docs/adr/0004-auth-header-x-user-id.md)). Le frontend
+l'injecte automatiquement via `apps/web/app/lib/api.ts`. Un `AuthGuard`
+global protège toutes les routes sauf `@Public()` (`/auth/*`,
+`/procedure-types`, `/`).
+
+Les endpoints `/admin/*` exigent en plus `@Roles('admin')`.
+
 ---
 
 ## API Reference
@@ -299,9 +333,10 @@ POST   /auth/register          Créer un compte
 POST   /auth/login             Se connecter
 
 POST   /dossiers               Créer un dossier (génère la checklist)
-GET    /dossiers?userId=:id    Lister les dossiers d'un utilisateur
-GET    /dossiers/:id           Détail d'un dossier
+GET    /dossiers               Lister mes dossiers
+GET    /dossiers/:id           Détail d'un dossier (owner ou admin)
 PATCH  /dossiers/:id/checklist/:key  Mettre à jour un item (todo|ok|na)
+DELETE /dossiers/:id           Supprimer un dossier + cascade
 
 POST   /files/upload           Uploader un fichier (multipart/form-data)
 GET    /files/dossier/:id      Lister les fichiers d'un dossier
@@ -311,7 +346,13 @@ DELETE /files/:id              Supprimer un fichier
 POST   /exports/dossier/:id/zip   Générer et télécharger un ZIP
 GET    /exports/dossier/:id       Lister les exports d'un dossier
 
-GET    /procedure-types        Lister les démarches avec templates
+GET    /procedure-types        Lister les démarches avec templates (public)
+
+GET    /admin/stats               Compteurs (users, dossiers, documents, exports)
+GET    /admin/users               Lister tous les utilisateurs
+PATCH  /admin/users/:id/role      Changer le rôle (user|admin)
+DELETE /admin/users/:id           Supprimer un utilisateur (cascade)
+GET    /admin/dossiers            Lister tous les dossiers de la plateforme
 ```
 
 ### Format checklist item
@@ -358,6 +399,31 @@ Le design system de Filepilot est défini dans `apps/web/app/globals.css`.
 - Corps : **DM Sans** (Google Fonts)
 
 **Style :** Flat Design — pas de gradients complexes, ombres légères, transitions 150ms.
+
+---
+
+## Documentation & ADR
+
+- [`docs/adr/`](docs/adr/) — registre des décisions d'architecture (stack, archiver v7, auth header, etc.)
+- [`docs/CHECKPOINT-CONFORMITE.md`](docs/CHECKPOINT-CONFORMITE.md) — audit ligne par ligne contre le checkpoint projet technique
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — workflow, conventions, prérequis
+
+---
+
+## Dette consciente
+
+Raccourcis assumés pour livrer le MVP. Tous sont documentés et planifiés.
+
+| Sujet                  | Raccourci MVP                                        | Remplacement prévu     |
+|------------------------|------------------------------------------------------|------------------------|
+| Auth                   | Header `x-user-id` (cf. ADR-0004)                    | JWT cookie HttpOnly (v0.2) |
+| Rate limiting          | Aucun sur `/auth/login`                              | `@nestjs/throttler` (v0.2) |
+| Validation input       | Vérifs ad hoc, pas de `class-validator`              | DTO + pipes (v0.2)     |
+| Soft delete            | Hard delete (cascade FK)                             | `deletedAt` (v0.2)     |
+| Audit log              | Aucun                                                | Table `AuditEvent` (v0.2) |
+| Tests d'intégration    | Mocks Prisma uniquement                              | testcontainers (v0.2)  |
+| Stockage fichiers      | Disque local                                         | S3 / MinIO (v0.3)      |
+| Repository pattern     | Services appellent Prisma direct                     | Couche repo si besoin  |
 
 ---
 
