@@ -366,6 +366,24 @@
 .btnExport:hover:not(:disabled) { background: var(--cta-hover); }
 .btnExport:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.btnDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.125rem;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition);
+  white-space: nowrap;
+}
+.btnDanger:hover:not(:disabled) { filter: brightness(0.9); }
+.btnDanger:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .errorBanner {
   display: flex;
   align-items: center;

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "../lib/api";
+import { apiFetch, setSessionUser, type SessionUser } from "../lib/api";
 import s from "../auth.module.css";
 
 export default function RegisterPage() {
@@ -18,11 +18,11 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
     try {
-      const user = await apiFetch<{ id: string; email: string }>("/auth/register", {
+      const user = await apiFetch<SessionUser>("/auth/register", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      localStorage.setItem("user", JSON.stringify(user));
+      setSessionUser(user);
       router.push("/dossiers");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de créer le compte");

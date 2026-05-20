@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "../lib/api";
+import { apiFetch, setSessionUser, type SessionUser } from "../lib/api";
 import s from "../auth.module.css";
 
 export default function LoginPage() {
@@ -18,12 +18,12 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const user = await apiFetch<{ id: string; email: string }>("/auth/login", {
+      const user = await apiFetch<SessionUser>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      localStorage.setItem("user", JSON.stringify(user));
-      router.push("/dossiers");
+      setSessionUser(user);
+      router.push(user.role === "admin" ? "/admin" : "/dossiers");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Identifiants incorrects");
     } finally {

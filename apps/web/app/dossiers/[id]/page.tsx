@@ -3,10 +3,13 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "../../lib/api";
+import {
+  apiFetch,
+  apiFetchRaw,
+  clearSessionUser,
+  getSessionUser,
+} from "../../lib/api";
 import s from "../dossiers.module.css";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 interface ChecklistItem { id: string; key: string; label: string; required: boolean; status: string; }
 interface Document { id: string; filename: string; mimeType: string; sizeBytes: number; createdAt: string; }
@@ -31,16 +34,18 @@ export default function DossierDetailPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [updatingKey, setUpdatingKey] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [userId, setUserId] = useState<string | undefined>(undefined);
+  const [role, setRole] = useState<string>("user");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (!stored) { router.push("/login"); return; }
-    const parsed = JSON.parse(stored) as { id?: string };
-    setUserId(parsed.id);
+    const current = getSessionUser();
+    if (!current) { router.push("/login"); return; }
+    setUserId(current.id);
+    setRole(current.role);
   }, [router]);
 
   useEffect(() => {
@@ -74,9 +79,9 @@ export default function DossierDetailPage() {
         const form = new FormData();
         form.append("file", file);
         form.append("dossierId", id);
-        form.append("ownerUserId", userId);
-        const doc = await fetch(`${API}/files/upload`, { method: "POST", body: form })
-          .then(async (r) => { if (!r.ok) throw new Error("Erreur upload"); return r.json() as Promise<Document>; });
+        const r = await apiFetchRaw(`/files/upload`, { method: "POST", body: form });
+        if (!r.ok) throw new Error("Erreur upload");
+        const doc = await r.json() as Document;
         setDocuments((prev) => [doc, ...prev]);
       }
     } catch { setError("Erreur lors de l'upload"); }
@@ -91,14 +96,26 @@ export default function DossierDetailPage() {
     } catch { setError("Impossible de supprimer le fichier"); }
   }
 
+  async function handleDownloadDoc(doc: Document) {
+    try {
+      const res = await apiFetchRaw(`/files/${doc.id}/download`);
+      if (!res.ok) throw new Error("Erreur téléchargement");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = doc.filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Impossible de télécharger le fichier");
+    }
+  }
+
   async function handleExport() {
     if (!userId) return;
     setExporting(true); setError("");
     try {
-      const res = await fetch(`${API}/exports/dossier/${id}/zip`, {
+      const res = await apiFetchRaw(`/exports/dossier/${id}/zip`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ownerUserId: userId }),
       });
       if (!res.ok) throw new Error("Erreur export");
       const blob = await res.blob();
@@ -108,6 +125,18 @@ export default function DossierDetailPage() {
       URL.revokeObjectURL(url);
     } catch { setError("Impossible de générer l'export ZIP"); }
     finally { setExporting(false); }
+  }
+
+  async function handleDeleteDossier() {
+    if (!confirm("Supprimer définitivement ce dossier et tous ses fichiers ?")) return;
+    setDeleting(true); setError("");
+    try {
+      await apiFetch(`/dossiers/${id}`, { method: "DELETE" });
+      router.push("/dossiers");
+    } catch {
+      setError("Impossible de supprimer le dossier");
+      setDeleting(false);
+    }
   }
 
   if (loading) return (
@@ -137,8 +166,14 @@ export default function DossierDetailPage() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>
             Mes dossiers
           </Link>
+          {role === "admin" && (
+            <Link href="/admin" className={s.sidebarItem}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+              Admin
+            </Link>
+          )}
         </nav>
-        <button className={s.sidebarLogout} onClick={() => { localStorage.removeItem("user"); router.push("/login"); }} aria-label="Se déconnecter">
+        <button className={s.sidebarLogout} onClick={() => { clearSessionUser(); router.push("/login"); }} aria-label="Se déconnecter">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
           Déconnexion
         </button>
@@ -176,6 +211,12 @@ export default function DossierDetailPage() {
               ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ animation: "spin 0.8s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
               : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}
             Export ZIP
+          </button>
+          <button className={s.btnDanger} onClick={handleDeleteDossier} disabled={deleting} aria-label="Supprimer définitivement le dossier">
+            {deleting
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ animation: "spin 0.8s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>}
+            Supprimer
           </button>
         </div>
 
@@ -241,9 +282,9 @@ export default function DossierDetailPage() {
                   </span>
                   <span className={s.docName}>{doc.filename}</span>
                   <span className={s.docMeta}>{formatSize(doc.sizeBytes)}</span>
-                  <a href={`${API}/files/${doc.id}/download`} className={s.docAction} aria-label={`Télécharger ${doc.filename}`} target="_blank" rel="noopener noreferrer">
+                  <button onClick={() => handleDownloadDoc(doc)} className={s.docAction} aria-label={`Télécharger ${doc.filename}`}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  </a>
+                  </button>
                   <button className={s.docActionDanger} onClick={() => handleDeleteDoc(doc.id)} aria-label={`Supprimer ${doc.filename}`}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                   </button>

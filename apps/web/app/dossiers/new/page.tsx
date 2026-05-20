@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, clearSessionUser, getSessionUser } from "../../lib/api";
 import s from "../dossiers.module.css";
 
 interface Template {
@@ -36,8 +36,7 @@ export default function NewDossierPage() {
   const [title, setTitle] = useState("");
 
   useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (!stored) {
+    if (!getSessionUser()) {
       router.push("/login");
       return;
     }
@@ -56,19 +55,16 @@ export default function NewDossierPage() {
   }, [router]);
 
   async function handleCreate(procedureTypeId: string) {
-    const stored = localStorage.getItem("user");
-    if (!stored) {
+    if (!getSessionUser()) {
       router.push("/login");
       return;
     }
-    const user = JSON.parse(stored) as { id: string };
     setCreating(true);
     setError("");
     try {
       const dossier = await apiFetch<{ id: string }>("/dossiers", {
         method: "POST",
         body: JSON.stringify({
-          ownerUserId: user.id,
           procedureTypeId,
           title: title || undefined,
         }),
@@ -122,7 +118,7 @@ export default function NewDossierPage() {
         <button
           className={s.sidebarLogout}
           onClick={() => {
-            localStorage.removeItem("user");
+            clearSessionUser();
             router.push("/login");
           }}
           aria-label="Se déconnecter"
