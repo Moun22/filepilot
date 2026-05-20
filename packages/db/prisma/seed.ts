@@ -2,12 +2,23 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import pg from "pg";
+import bcrypt from "bcryptjs";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
+    // 0) Admin bootstrap (idempotent)
+    const adminEmail = process.env.ADMIN_EMAIL ?? "admin@filepilot.local";
+    const adminPassword = process.env.ADMIN_PASSWORD ?? "admin123";
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
+    await prisma.user.upsert({
+        where: { email: adminEmail },
+        update: { role: "admin" },
+        create: { email: adminEmail, passwordHash, role: "admin" },
+    });
+
     // 1) Organizations
     const caf = await prisma.organization.upsert({
         where: { slug: "caf" },

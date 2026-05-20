@@ -16,6 +16,7 @@ model User {
   id           String   @id @default(uuid())
   email        String   @unique
   passwordHash String
+  role         String   @default("user")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -73,6 +74,8 @@ model Dossier {
   checklistItems DossierChecklistItem[]
   documents      Document[]
   exports        Export[]
+
+  @@index([ownerUserId])
 }
 
 model DossierChecklistItem {
@@ -85,7 +88,7 @@ model DossierChecklistItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  dossier Dossier @relation(fields: [dossierId], references: [id])
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
 
   @@unique([dossierId, key])
 }
@@ -101,8 +104,10 @@ model Document {
   storagePath String // MVP: chemin disque (plus tard key S3)
   createdAt   DateTime @default(now())
 
-  dossier Dossier @relation(fields: [dossierId], references: [id])
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
   owner   User    @relation(fields: [ownerUserId], references: [id])
+
+  @@index([dossierId])
 }
 
 model Export {
@@ -114,6 +119,8 @@ model Export {
   storagePath String
   createdAt   DateTime @default(now())
 
-  dossier Dossier @relation(fields: [dossierId], references: [id])
+  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
   owner   User    @relation(fields: [ownerUserId], references: [id])
+
+  @@index([dossierId])
 }
