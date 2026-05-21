@@ -11,10 +11,29 @@ import {
 } from "../../lib/api";
 import s from "../dossiers.module.css";
 
-interface ChecklistItem { id: string; key: string; label: string; required: boolean; status: string; }
-interface Document { id: string; filename: string; mimeType: string; sizeBytes: number; createdAt: string; }
+const MAX_DOCS_PER_ITEM = 5;
+
+interface ChecklistItem {
+  id: string;
+  key: string;
+  label: string;
+  required: boolean;
+  status: string;
+}
+interface Document {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+  checklistItemId: string | null;
+}
 interface Dossier {
-  id: string; title: string | null; status: string; createdAt: string; templateVersion: number;
+  id: string;
+  title: string | null;
+  status: string;
+  createdAt: string;
+  templateVersion: number;
   procedureType: { name: string; slug: string; organization: { name: string } };
   checklistItems: ChecklistItem[];
 }
@@ -25,6 +44,12 @@ function formatSize(b: number) {
   return `${(b / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+function statusLabel(status: string) {
+  if (status === "ok") return "Validé";
+  if (status === "na") return "N/A";
+  return "À faire";
+}
+
 export default function DossierDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -32,68 +57,163 @@ export default function DossierDetailPage() {
   const [dossier, setDossier] = useState<Dossier | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [updatingKey, setUpdatingKey] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [userId, setUserId] = useState<string | undefined>(undefined);
   const [role, setRole] = useState<string>("user");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const pendingItemId = useRef<string | null>(null);
+  const pendingReplaceDoc = useRef<Document | null>(null);
 
   useEffect(() => {
     const current = getSessionUser();
-    if (!current) { router.push("/login"); return; }
+    if (!current) {
+      router.push("/login");
+      return;
+    }
     setUserId(current.id);
     setRole(current.role);
   }, [router]);
 
   useEffect(() => {
-    if (userId === undefined) return; // attend l'init
+    if (userId === undefined) return;
     Promise.all([
       apiFetch<Dossier>(`/dossiers/${id}`),
       apiFetch<Document[]>(`/files/dossier/${id}`),
     ])
-      .then(([d, docs]) => { setDossier(d); setDocuments(docs); })
+      .then(([d, docs]) => {
+        setDossier(d);
+        setDocuments(docs);
+      })
       .catch(() => router.push("/dossiers"))
       .finally(() => setLoading(false));
   }, [id, router, userId]);
 
-  async function updateChecklist(key: string, current: string) {
-    if (!dossier) return;
-    const next = current === "todo" ? "ok" : current === "ok" ? "na" : "todo";
-    setUpdatingKey(key);
-    try {
-      await apiFetch(`/dossiers/${dossier.id}/checklist/${key}`, { method: "PATCH", body: JSON.stringify({ status: next }) });
-      setDossier((prev) => prev ? { ...prev, checklistItems: prev.checklistItems.map((c) => c.key === key ? { ...c, status: next } : c) } : prev);
-    } catch { setError("Impossible de mettre à jour l'élément"); }
-    finally { setUpdatingKey(null); }
+  function setItemStatus(itemId: string | null, next: string) {
+    if (!itemId) return;
+    setDossier((prev) =>
+      prev
+        ? {
+            ...prev,
+            checklistItems: prev.checklistItems.map((c) =>
+              c.id === itemId ? { ...c, status: next } : c,
+            ),
+          }
+        : prev,
+    );
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function updateChecklist(item: ChecklistItem) {
+    if (!dossier) return;
+    const next =
+      item.status === "todo" ? "ok" : item.status === "ok" ? "na" : "todo";
+    setUpdatingKey(item.key);
+    try {
+      await apiFetch(`/dossiers/${dossier.id}/checklist/${item.key}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: next }),
+      });
+      setItemStatus(item.id, next);
+    } catch {
+      setError("Impossible de mettre à jour l'élément");
+    } finally {
+      setUpdatingKey(null);
+    }
+  }
+
+  function openAddDialog(itemId: string | null) {
+    pendingItemId.current = itemId;
+    addInputRef.current?.click();
+  }
+
+  function openReplaceDialog(doc: Document) {
+    pendingReplaceDoc.current = doc;
+    replaceInputRef.current?.click();
+  }
+
+  async function handleAddChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
-    if (!files?.length || !userId) return;
-    setUploading(true); setError("");
+    const target = pendingItemId.current;
+    pendingItemId.current = null;
+    if (addInputRef.current) addInputRef.current.value = "";
+    if (!files?.length) return;
+    setBusy(true);
+    setError("");
     try {
       for (const file of Array.from(files)) {
         const form = new FormData();
         form.append("file", file);
         form.append("dossierId", id);
-        const r = await apiFetchRaw(`/files/upload`, { method: "POST", body: form });
-        if (!r.ok) throw new Error("Erreur upload");
-        const doc = await r.json() as Document;
+        if (target) form.append("checklistItemId", target);
+        const r = await apiFetchRaw(`/files/upload`, {
+          method: "POST",
+          body: form,
+        });
+        if (!r.ok) {
+          const msg = (await r.json().catch(() => null))?.message ?? "Erreur upload";
+          throw new Error(msg);
+        }
+        const doc = (await r.json()) as Document;
         setDocuments((prev) => [doc, ...prev]);
+        if (target) setItemStatus(target, "ok");
       }
-    } catch { setError("Erreur lors de l'upload"); }
-    finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = ""; }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de l'upload");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function handleDeleteDoc(docId: string) {
-    if (!confirm("Supprimer ce fichier ?")) return;
+  async function handleReplaceChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const doc = pendingReplaceDoc.current;
+    pendingReplaceDoc.current = null;
+    if (replaceInputRef.current) replaceInputRef.current.value = "";
+    if (!file || !doc) return;
+    setBusy(true);
+    setError("");
     try {
-      await apiFetch(`/files/${docId}`, { method: "DELETE" });
-      setDocuments((prev) => prev.filter((d) => d.id !== docId));
-    } catch { setError("Impossible de supprimer le fichier"); }
+      const form = new FormData();
+      form.append("file", file);
+      const r = await apiFetchRaw(`/files/${doc.id}/replace`, {
+        method: "PUT",
+        body: form,
+      });
+      if (!r.ok) {
+        const msg = (await r.json().catch(() => null))?.message ?? "Erreur";
+        throw new Error(msg);
+      }
+      const updated = (await r.json()) as Document;
+      setDocuments((prev) => prev.map((d) => (d.id === updated.id ? { ...d, ...updated } : d)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Impossible de remplacer le fichier");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteDoc(doc: Document) {
+    if (!confirm(`Supprimer "${doc.filename}" ?`)) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/files/${doc.id}`, { method: "DELETE" });
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+      if (doc.checklistItemId) {
+        const remaining = documents.filter(
+          (d) => d.id !== doc.id && d.checklistItemId === doc.checklistItemId,
+        ).length;
+        if (remaining === 0) setItemStatus(doc.checklistItemId, "todo");
+      }
+    } catch {
+      setError("Impossible de supprimer le fichier");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleDownloadDoc(doc: Document) {
@@ -103,7 +223,9 @@ export default function DossierDetailPage() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = doc.filename; a.click();
+      a.href = url;
+      a.download = doc.filename;
+      a.click();
       URL.revokeObjectURL(url);
     } catch {
       setError("Impossible de télécharger le fichier");
@@ -112,7 +234,8 @@ export default function DossierDetailPage() {
 
   async function handleExport() {
     if (!userId) return;
-    setExporting(true); setError("");
+    setExporting(true);
+    setError("");
     try {
       const res = await apiFetchRaw(`/exports/dossier/${id}/zip`, {
         method: "POST",
@@ -121,15 +244,21 @@ export default function DossierDetailPage() {
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `filepilot-${dossier?.procedureType.slug ?? id}.zip`; a.click();
+      a.href = url;
+      a.download = `filepilot-${dossier?.procedureType.slug ?? id}.zip`;
+      a.click();
       URL.revokeObjectURL(url);
-    } catch { setError("Impossible de générer l'export ZIP"); }
-    finally { setExporting(false); }
+    } catch {
+      setError("Impossible de générer l'export ZIP");
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function handleDeleteDossier() {
     if (!confirm("Supprimer définitivement ce dossier et tous ses fichiers ?")) return;
-    setDeleting(true); setError("");
+    setDeleting(true);
+    setError("");
     try {
       await apiFetch(`/dossiers/${id}`, { method: "DELETE" });
       router.push("/dossiers");
@@ -139,20 +268,22 @@ export default function DossierDetailPage() {
     }
   }
 
-  if (loading) return (
-    <div className={s.shell}>
-      <div className={s.loader}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-        Chargement…
+  if (loading)
+    return (
+      <div className={s.shell}>
+        <div className={s.loader}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 0.8s linear infinite" }} aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+          Chargement…
+        </div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
-  );
+    );
   if (!dossier) return null;
 
   const done = dossier.checklistItems.filter((c) => c.status === "ok" || c.status === "na").length;
   const total = dossier.checklistItems.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const otherDocs = documents.filter((d) => !d.checklistItemId);
 
   return (
     <div className={s.shell}>
@@ -230,27 +361,79 @@ export default function DossierDetailPage() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
             Checklist des pièces
           </h2>
-          <ul className={s.checklist} role="list">
-            {dossier.checklistItems.map((item) => (
-              <li key={item.id}>
-                <button
-                  className={`${s.checkItem} ${item.status === "ok" ? s.checkItemOk : item.status === "na" ? s.checkItemNa : ""}`}
-                  onClick={() => updateChecklist(item.key, item.status)}
-                  disabled={updatingKey === item.key}
-                  aria-pressed={item.status === "ok"}
-                >
-                  <span className={`${s.checkIcon} ${item.status === "ok" ? s.checkIconOk : item.status === "na" ? s.checkIconNa : ""}`} aria-hidden="true">
-                    {item.status === "ok" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
-                    {item.status === "na" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>}
-                  </span>
-                  <span className={s.checkLabel}>
-                    {item.label}
-                    {item.required && <span className={s.checkRequired} aria-label="obligatoire"> *</span>}
-                  </span>
-                  <span className={s.checkStatus}>{item.status === "ok" ? "Validé" : item.status === "na" ? "N/A" : "À faire"}</span>
-                </button>
-              </li>
-            ))}
+          <ul className={s.checklistCards} role="list">
+            {dossier.checklistItems.map((item) => {
+              const itemDocs = documents.filter((d) => d.checklistItemId === item.id);
+              const canAdd = itemDocs.length < MAX_DOCS_PER_ITEM;
+              const cardClass = item.status === "ok"
+                ? `${s.checkCard} ${s.checkCardOk}`
+                : item.status === "na"
+                  ? `${s.checkCard} ${s.checkCardNa}`
+                  : s.checkCard;
+              return (
+                <li key={item.id} className={cardClass}>
+                  <div className={s.checkCardHeader}>
+                    <span className={`${s.checkIcon} ${item.status === "ok" ? s.checkIconOk : item.status === "na" ? s.checkIconNa : ""}`} aria-hidden="true">
+                      {item.status === "ok" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+                      {item.status === "na" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>}
+                    </span>
+                    <span className={s.checkCardLabel}>
+                      {item.label}
+                      {item.required && <span className={s.checkRequired} aria-label="obligatoire"> *</span>}
+                    </span>
+                    <span className={s.checkStatus}>{statusLabel(item.status)}</span>
+                    <div className={s.checkCardActions}>
+                      <button
+                        className={s.checkToggle}
+                        onClick={() => updateChecklist(item)}
+                        disabled={updatingKey === item.key}
+                        aria-label={`Cycler le statut de ${item.label}`}
+                        title="Cycler statut (À faire → Validé → N/A)"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /></svg>
+                        Statut
+                      </button>
+                      <button
+                        className={s.checkAddBtn}
+                        onClick={() => openAddDialog(item.id)}
+                        disabled={busy || !canAdd}
+                        aria-label={`Ajouter un document à ${item.label}`}
+                        title={canAdd ? `Ajouter (${itemDocs.length}/${MAX_DOCS_PER_ITEM})` : `Limite ${MAX_DOCS_PER_ITEM} atteinte`}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        {itemDocs.length}/{MAX_DOCS_PER_ITEM}
+                      </button>
+                    </div>
+                  </div>
+                  {itemDocs.length === 0 ? (
+                    <p className={s.checkCardEmpty}>Aucun document attaché. Cliquez sur + pour en ajouter un.</p>
+                  ) : (
+                    <ul className={s.checkCardBody} role="list">
+                      {itemDocs.map((doc) => (
+                        <li key={doc.id} className={s.checkDoc}>
+                          <span className={s.checkDocIcon} aria-hidden="true">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                          </span>
+                          <span className={s.checkDocName}>{doc.filename}</span>
+                          <span className={s.checkDocMeta}>{formatSize(doc.sizeBytes)}</span>
+                          <div className={s.checkDocActions}>
+                            <button className={s.checkDocBtn} onClick={() => handleDownloadDoc(doc)} disabled={busy} aria-label={`Télécharger ${doc.filename}`} title="Télécharger">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                            </button>
+                            <button className={s.checkDocBtn} onClick={() => openReplaceDialog(doc)} disabled={busy} aria-label={`Remplacer ${doc.filename}`} title="Remplacer">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                            </button>
+                            <button className={`${s.checkDocBtn} ${s.checkDocBtnDanger}`} onClick={() => handleDeleteDoc(doc)} disabled={busy} aria-label={`Supprimer ${doc.filename}`} title="Supprimer">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
 
@@ -258,34 +441,36 @@ export default function DossierDetailPage() {
           <div className={s.docsSectionTop}>
             <h2 className={s.sectionTitle} id="docs-heading">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-              Documents ({documents.length})
+              Autres documents ({otherDocs.length})
             </h2>
-            <label className={`${s.btnUpload} ${uploading ? s.btnUploadLoading : ""}`}>
-              {uploading
-                ? <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ animation: "spin 0.8s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>Upload…</>
-                : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Ajouter des fichiers</>}
-              <input ref={fileInputRef} type="file" multiple onChange={handleUpload} disabled={uploading} className={s.fileInputHidden} tabIndex={-1} />
-            </label>
+            <button className={`${s.btnUpload} ${busy ? s.btnUploadLoading : ""}`} onClick={() => openAddDialog(null)} disabled={busy} aria-label="Ajouter un document non rattaché à la checklist">
+              {busy
+                ? <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ animation: "spin 0.8s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>Traitement…</>
+                : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Ajouter un document</>}
+            </button>
           </div>
 
-          {documents.length === 0 ? (
+          {otherDocs.length === 0 ? (
             <div className={s.docsEmpty}>
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-              <p>Aucun fichier uploadé pour ce dossier.</p>
+              <p>Aucun document hors checklist.</p>
             </div>
           ) : (
             <ul className={s.docList} role="list">
-              {documents.map((doc) => (
+              {otherDocs.map((doc) => (
                 <li key={doc.id} className={s.docItem}>
                   <span className={s.docIcon} aria-hidden="true">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                   </span>
                   <span className={s.docName}>{doc.filename}</span>
                   <span className={s.docMeta}>{formatSize(doc.sizeBytes)}</span>
-                  <button onClick={() => handleDownloadDoc(doc)} className={s.docAction} aria-label={`Télécharger ${doc.filename}`}>
+                  <button onClick={() => handleDownloadDoc(doc)} className={s.docAction} aria-label={`Télécharger ${doc.filename}`} title="Télécharger">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                   </button>
-                  <button className={s.docActionDanger} onClick={() => handleDeleteDoc(doc.id)} aria-label={`Supprimer ${doc.filename}`}>
+                  <button onClick={() => openReplaceDialog(doc)} className={s.docAction} aria-label={`Remplacer ${doc.filename}`} title="Remplacer">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                  </button>
+                  <button className={s.docActionDanger} onClick={() => handleDeleteDoc(doc)} aria-label={`Supprimer ${doc.filename}`} title="Supprimer">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                   </button>
                 </li>
@@ -293,6 +478,9 @@ export default function DossierDetailPage() {
             </ul>
           )}
         </section>
+
+        <input ref={addInputRef} type="file" multiple onChange={handleAddChange} className={s.fileInputHidden} tabIndex={-1} aria-hidden="true" />
+        <input ref={replaceInputRef} type="file" onChange={handleReplaceChange} className={s.fileInputHidden} tabIndex={-1} aria-hidden="true" />
       </main>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>

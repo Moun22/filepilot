@@ -465,6 +465,145 @@
 .checkRequired { color: var(--danger); font-size: 0.75rem; }
 .checkStatus { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; white-space: nowrap; }
 
+/* CHECKLIST CARDS (item + its documents) */
+.checkCard {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color var(--transition), background var(--transition);
+}
+.checkCard:hover { border-color: var(--border-hover); }
+.checkCardOk {
+  background: var(--success-light);
+  border-color: var(--success-border);
+}
+.checkCardNa {
+  background: var(--muted);
+  opacity: 0.75;
+}
+
+.checkCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+}
+.checkCardLabel {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.checkCardActions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.checkToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.checkToggle:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+.checkToggle:disabled { opacity: 0.6; cursor: wait; }
+
+.checkAddBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-light);
+  border: 1px solid var(--primary-light);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition);
+}
+.checkAddBtn:hover:not(:disabled) { background: var(--primary); color: #fff; border-color: var(--primary); }
+.checkAddBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.checkCardBody {
+  padding: 0 1rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.checkCardEmpty {
+  margin: 0 1rem 0.875rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.checkDoc {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.checkDocIcon { color: var(--primary); display: flex; flex-shrink: 0; }
+.checkDocName {
+  flex: 1;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.checkDocMeta {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.checkDocActions { display: flex; gap: 0.125rem; }
+.checkDocBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.checkDocBtn:hover:not(:disabled) { background: var(--primary-light); color: var(--primary); }
+.checkDocBtn:disabled { opacity: 0.4; cursor: wait; }
+.checkDocBtnDanger:hover:not(:disabled) { background: var(--danger-light); color: var(--danger); }
+
+.checklistCards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0 0 2rem;
+  padding: 0;
+}
+
 /* DOCUMENTS */
 .docsSection { margin-top: 0.5rem; }
 .docsSectionTop {
