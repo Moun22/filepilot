@@ -155,7 +155,7 @@ export default function AdminPage() {
         </button>
       </aside>
 
-      <main className={s.main}>
+      <main className={`${s.main} ${a.mainWide}`}>
         <div className={s.topbar}>
           <h1 className={s.title}>Administration</h1>
         </div>
