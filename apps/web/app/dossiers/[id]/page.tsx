@@ -137,15 +137,17 @@ export default function DossierDetailPage() {
   }
 
   async function handleAddChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
+    const picked = e.target.files ? Array.from(e.target.files) : [];
     const target = pendingItemId.current;
     pendingItemId.current = null;
-    if (addInputRef.current) addInputRef.current.value = "";
-    if (!files?.length) return;
+    if (picked.length === 0) {
+      if (addInputRef.current) addInputRef.current.value = "";
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      for (const file of Array.from(files)) {
+      for (const file of picked) {
         const form = new FormData();
         form.append("file", file);
         form.append("dossierId", id);
@@ -166,20 +168,23 @@ export default function DossierDetailPage() {
       setError(err instanceof Error ? err.message : "Erreur lors de l'upload");
     } finally {
       setBusy(false);
+      if (addInputRef.current) addInputRef.current.value = "";
     }
   }
 
   async function handleReplaceChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const picked = e.target.files?.[0];
     const doc = pendingReplaceDoc.current;
     pendingReplaceDoc.current = null;
-    if (replaceInputRef.current) replaceInputRef.current.value = "";
-    if (!file || !doc) return;
+    if (!picked || !doc) {
+      if (replaceInputRef.current) replaceInputRef.current.value = "";
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", picked);
       const r = await apiFetchRaw(`/files/${doc.id}/replace`, {
         method: "PUT",
         body: form,
@@ -194,6 +199,7 @@ export default function DossierDetailPage() {
       setError(err instanceof Error ? err.message : "Impossible de remplacer le fichier");
     } finally {
       setBusy(false);
+      if (replaceInputRef.current) replaceInputRef.current.value = "";
     }
   }
 
