@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Put,
   Get,
   Delete,
   Param,
@@ -27,6 +28,17 @@ import { CurrentUser, AuthUser } from '../auth/auth.guard';
 const UPLOAD_DIR = join(process.cwd(), 'uploads');
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
+const uploadInterceptor = FileInterceptor('file', {
+  storage: diskStorage({
+    destination: UPLOAD_DIR,
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+      cb(null, `${unique}${extname(file.originalname)}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+
 @ApiBearerAuth()
 @ApiTags('files')
 @Controller('files')
@@ -34,23 +46,16 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Post('upload')
-  @ApiOperation({ summary: 'Upload a file for a dossier' })
+  @ApiOperation({
+    summary:
+      'Upload a file (optionally attached to a checklist item via checklistItemId)',
+  })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: UPLOAD_DIR,
-        filename: (_req, file, cb) => {
-          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          cb(null, `${unique}${extname(file.originalname)}`);
-        },
-      }),
-      limits: { fileSize: 20 * 1024 * 1024 },
-    }),
-  )
+  @UseInterceptors(uploadInterceptor)
   uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @Body('dossierId') dossierId: string,
+    @Body('checklistItemId') checklistItemId: string | undefined,
     @CurrentUser() user: AuthUser,
   ) {
     if (!file) throw new BadRequestException('No file provided');
@@ -58,6 +63,31 @@ export class FilesController {
     return this.filesService.createDocument(
       {
         dossierId,
+        checklistItemId: checklistItemId || null,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        storagePath: file.path,
+      },
+      user,
+    );
+  }
+
+  @Put(':id/replace')
+  @ApiOperation({
+    summary: 'Replace the physical file of an existing document',
+  })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(uploadInterceptor)
+  replace(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (!file) throw new BadRequestException('No file provided');
+    return this.filesService.replaceDocument(
+      id,
+      {
         filename: file.originalname,
         mimeType: file.mimetype,
         sizeBytes: file.size,
