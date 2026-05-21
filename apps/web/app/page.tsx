@@ -20,10 +20,6 @@ export default function Home() {
 
       {/* HERO */}
       <section className={styles.hero}>
-        <div className={styles.heroBadge}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
-          MVP v0.1 disponible
-        </div>
         <h1 className={styles.heroTitle}>Votre coffre<br/>administratif intelligent</h1>
         <p className={styles.heroSub}>
           Centralisez vos documents, suivez vos démarches (CAF, Préfecture, France Travail…)
