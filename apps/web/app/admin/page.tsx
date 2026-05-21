@@ -205,51 +205,56 @@ export default function AdminPage() {
             {users.length === 0 ? (
               <p className={a.empty}>Aucun utilisateur.</p>
             ) : (
-              <table className={a.table}>
-                <thead>
-                  <tr>
-                    <th>Email</th>
-                    <th>Rôle</th>
-                    <th>Dossiers</th>
-                    <th>Inscrit le</th>
-                    <th style={{ textAlign: "right" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => (
-                    <tr key={u.id}>
-                      <td>{u.email}{u.id === me?.id && " (vous)"}</td>
-                      <td>
-                        <span className={`${a.rolePill} ${u.role === "admin" ? a.roleAdmin : a.roleUser}`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td>{u._count.dossiers}</td>
-                      <td>{new Date(u.createdAt).toLocaleDateString("fr-FR")}</td>
-                      <td>
-                        <div className={a.actionRow}>
-                          <button
-                            className={a.iconBtn}
-                            onClick={() => toggleRole(u)}
-                            disabled={u.id === me?.id || busyId === u.id}
-                            aria-label={u.role === "admin" ? "Rétrograder" : "Promouvoir admin"}
-                          >
-                            {u.role === "admin" ? "→ user" : "→ admin"}
-                          </button>
-                          <button
-                            className={`${a.iconBtn} ${a.iconBtnDanger}`}
-                            onClick={() => deleteUser(u)}
-                            disabled={u.id === me?.id || busyId === u.id}
-                            aria-label={`Supprimer ${u.email}`}
-                          >
-                            Supprimer
-                          </button>
-                        </div>
-                      </td>
+              <div className={a.tableWrap}>
+                <table className={a.table}>
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th className={a.colShrink}>Rôle</th>
+                      <th className={a.colNum}>Dossiers</th>
+                      <th className={a.colShrink}>Inscrit le</th>
+                      <th className={a.colActions}>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {users.map((u) => (
+                      <tr key={u.id}>
+                        <td className={a.colTruncate} title={u.email}>
+                          <span className={a.cellStrong}>{u.email}</span>
+                          {u.id === me?.id && <span className={a.cellSecondary}> · vous</span>}
+                        </td>
+                        <td className={a.colShrink}>
+                          <span className={`${a.rolePill} ${u.role === "admin" ? a.roleAdmin : a.roleUser}`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className={a.colNum}>{u._count.dossiers}</td>
+                        <td className={a.colDate}>{new Date(u.createdAt).toLocaleDateString("fr-FR")}</td>
+                        <td className={a.colActions}>
+                          <div className={a.actionRow}>
+                            <button
+                              className={a.iconBtn}
+                              onClick={() => toggleRole(u)}
+                              disabled={u.id === me?.id || busyId === u.id}
+                              aria-label={u.role === "admin" ? "Rétrograder" : "Promouvoir admin"}
+                            >
+                              {u.role === "admin" ? "→ user" : "→ admin"}
+                            </button>
+                            <button
+                              className={`${a.iconBtn} ${a.iconBtnDanger}`}
+                              onClick={() => deleteUser(u)}
+                              disabled={u.id === me?.id || busyId === u.id}
+                              aria-label={`Supprimer ${u.email}`}
+                            >
+                              Supprimer
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         )}
@@ -262,42 +267,53 @@ export default function AdminPage() {
             {dossiers.length === 0 ? (
               <p className={a.empty}>Aucun dossier.</p>
             ) : (
-              <table className={a.table}>
-                <thead>
-                  <tr>
-                    <th>Propriétaire</th>
-                    <th>Démarche</th>
-                    <th>Titre</th>
-                    <th>Pièces</th>
-                    <th>Créé le</th>
-                    <th style={{ textAlign: "right" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dossiers.map((d) => (
-                    <tr key={d.id}>
-                      <td>{d.owner.email}</td>
-                      <td>{d.procedureType.organization.name} — {d.procedureType.name}</td>
-                      <td>{d.title ?? "—"}</td>
-                      <td>{d._count.documents} doc · {d._count.checklistItems} items</td>
-                      <td>{new Date(d.createdAt).toLocaleDateString("fr-FR")}</td>
-                      <td>
-                        <div className={a.actionRow}>
-                          <Link href={`/dossiers/${d.id}`} className={a.iconBtn}>Voir</Link>
-                          <button
-                            className={`${a.iconBtn} ${a.iconBtnDanger}`}
-                            onClick={() => deleteDossier(d)}
-                            disabled={busyId === d.id}
-                            aria-label={`Supprimer ${d.title ?? d.procedureType.name}`}
-                          >
-                            Supprimer
-                          </button>
-                        </div>
-                      </td>
+              <div className={a.tableWrap}>
+                <table className={a.table}>
+                  <thead>
+                    <tr>
+                      <th>Propriétaire</th>
+                      <th>Démarche</th>
+                      <th>Titre</th>
+                      <th className={a.colShrink}>Pièces</th>
+                      <th className={a.colShrink}>Créé le</th>
+                      <th className={a.colActions}>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {dossiers.map((d) => (
+                      <tr key={d.id}>
+                        <td className={a.colTruncate} title={d.owner.email}>
+                          <span className={a.cellStrong}>{d.owner.email}</span>
+                        </td>
+                        <td className={a.colTruncate} title={`${d.procedureType.organization.name} — ${d.procedureType.name}`}>
+                          {d.procedureType.organization.name} — {d.procedureType.name}
+                        </td>
+                        <td className={a.colTruncate} title={d.title ?? ""}>
+                          {d.title ?? <span className={a.cellSecondary}>—</span>}
+                        </td>
+                        <td className={a.colShrink}>
+                          <span className={a.cellStrong}>{d._count.documents}</span>
+                          <span className={a.cellSecondary}> doc · {d._count.checklistItems} items</span>
+                        </td>
+                        <td className={a.colDate}>{new Date(d.createdAt).toLocaleDateString("fr-FR")}</td>
+                        <td className={a.colActions}>
+                          <div className={a.actionRow}>
+                            <Link href={`/dossiers/${d.id}`} className={a.iconBtn}>Voir</Link>
+                            <button
+                              className={`${a.iconBtn} ${a.iconBtnDanger}`}
+                              onClick={() => deleteDossier(d)}
+                              disabled={busyId === d.id}
+                              aria-label={`Supprimer ${d.title ?? d.procedureType.name}`}
+                            >
+                              Supprimer
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         )}
