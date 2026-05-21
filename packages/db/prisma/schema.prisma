@@ -88,15 +88,17 @@ model DossierChecklistItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  dossier   Dossier    @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  documents Document[]
 
   @@unique([dossierId, key])
 }
 
 model Document {
-  id          String @id @default(uuid())
-  dossierId   String
-  ownerUserId String
+  id              String  @id @default(uuid())
+  dossierId       String
+  ownerUserId     String
+  checklistItemId String?
 
   filename    String
   mimeType    String
@@ -104,10 +106,12 @@ model Document {
   storagePath String // MVP: chemin disque (plus tard key S3)
   createdAt   DateTime @default(now())
 
-  dossier Dossier @relation(fields: [dossierId], references: [id], onDelete: Cascade)
-  owner   User    @relation(fields: [ownerUserId], references: [id])
+  dossier       Dossier               @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  owner         User                  @relation(fields: [ownerUserId], references: [id])
+  checklistItem DossierChecklistItem? @relation(fields: [checklistItemId], references: [id], onDelete: SetNull)
 
   @@index([dossierId])
+  @@index([checklistItemId])
 }
 
 model Export {
