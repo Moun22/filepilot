@@ -130,13 +130,11 @@ describe('FilesController', () => {
       storagePath: '/tmp/cv.pdf',
       filename: 'cv.pdf',
     });
-    const res = { download: jest.fn() } as unknown as Response;
+    const download = jest.fn();
+    const res = { download } as unknown as Response;
     await controller.download('doc1', user, res);
     expect(service.findOne).toHaveBeenCalledWith('doc1', user);
-    expect((res as { download: jest.Mock }).download).toHaveBeenCalledWith(
-      '/tmp/cv.pdf',
-      'cv.pdf',
-    );
+    expect(download).toHaveBeenCalledWith('/tmp/cv.pdf', 'cv.pdf');
   });
 
   it('deleteFile forwards to the service', async () => {
